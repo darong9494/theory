@@ -1,0 +1,578 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>혈흔 형태 및 과도타격 기반 범죄자 프로파일링 도구</title>
+    <!-- Tailwind CSS (CDN) -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Chart.js (CDN) -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        @import url('https://cdn.jsdelivr.net/gh/orioncactus/pretendard/dist/web/static/pretendard.css');
+        body { font-family: 'Pretendard', sans-serif; }
+        canvas { cursor: crosshair; }
+        /* 반짝이는 하이라이트 애니메이션 */
+        @keyframes highlight {
+            0% { background-color: rgba(239, 68, 68, 0.4); }
+            100% { background-color: transparent; }
+        }
+        .animate-pulse-fast {
+            animation: highlight 0.5s ease-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-900 text-slate-100 min-h-screen relative">
+
+    <!-- 클릭 피드백용 토스트 알림 메시지 영역 -->
+    <div id="toastNotification" class="fixed top-20 right-6 bg-red-600 text-white font-bold px-4 py-2.5 rounded-lg shadow-2xl transition-all duration-300 opacity-0 transform translate-y-[-10px] pointer-events-none z-50 flex items-center gap-2 border border-red-400">
+        <span>🔍</span> <span id="toastMsg">프로파일링 연산 완료!</span>
+    </div>
+
+    <!-- 환경 변수 참조 안전 가드 레일 Script (BRB-C07) -->
+    <script>
+        window.ENV = {
+            AI_API_KEY: window.ENV_AI_API_KEY || "",
+            USE_MOCK_DATA: true
+        };
+    </script>
+
+    <!-- 상단 헤더 -->
+    <header class="border-b border-slate-800 bg-slate-950/90 backdrop-blur sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 py-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-2">
+            <div>
+                <span class="inline-block px-2.5 py-0.5 rounded-full text-xs font-semibold bg-red-900/50 text-red-400 border border-red-700/50 mb-1">
+                    법과학 & 범죄심리 프로파일링 도구
+                </span>
+                <h1 class="text-xl md:text-2xl font-bold text-white">현장 혈흔·타격 흔적 기반 가해자 성격 역추적 시스템</h1>
+            </div>
+            <div class="text-xs text-slate-400 bg-slate-900 p-2.5 rounded border border-slate-800">
+                📌 <strong>기반 논문:</strong> 범죄자의 성격 특성이 날붙이 살해 현장 타격 횟수 및 비산 혈흔 범위에 미치는 영향 (김다영, 2026)
+            </div>
+        </div>
+    </header>
+
+    <!-- 메인 컨테이너 -->
+    <main class="max-w-7xl mx-auto px-4 py-8 space-y-8">
+
+        <!-- 앱 목적 정의 카드 -->
+        <section class="bg-gradient-to-r from-slate-800 via-slate-850 to-slate-900 rounded-xl p-6 border border-slate-700 shadow-xl space-y-4">
+            <div>
+                <div class="flex items-center gap-2 text-xs font-semibold text-red-400 tracking-wider uppercase mb-1">
+                    <span>🎯 이 앱은 누구를 어떻게 돕습니까? (1분 내 이해 가이드)</span>
+                </div>
+                <p class="text-white font-medium text-base md:text-lg leading-relaxed bg-slate-950/70 p-4 rounded-lg border border-slate-800 shadow-inner">
+                    "<strong>과학수사관 및 범죄 프로파일러</strong>가 날붙이 살해 사건 현장을 조사할 때, 논문의 <strong>[외향성·충동성 성격 특성과 타격 횟수(r=0.97) 및 비산 혈흔 범위(r=0.95) 간 상관관계]</strong> 결과를 바탕으로 <strong>가해자의 성격 유형과 감정 통제 상태를 역추적</strong>해 준다."
+                </p>
+            </div>
+
+            <!-- 1분 체험 가이드 -->
+            <div>
+                <div class="text-xs font-semibold text-slate-400 mb-2">💡 1분 체험 가이드: 사용자가 직접 해볼 일 3가지</div>
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 text-xs">
+                    <div class="bg-slate-900/80 p-3.5 rounded-lg border border-slate-700/70 flex flex-col gap-1 hover:border-red-500/50 transition">
+                        <span class="text-red-400 font-bold">1. 현장 클릭 및 수치 입력</span>
+                        <span class="text-slate-300">시뮬레이터를 직접 클릭하여 타격(찌르기)을 가하거나 창상 수 슬라이더 및 비산 혈흔면 수(0~3점)를 조절해 보세요.</span>
+                    </div>
+                    <div class="bg-slate-900/80 p-3.5 rounded-lg border border-slate-700/70 flex flex-col gap-1 hover:border-amber-500/50 transition">
+                        <span class="text-amber-400 font-bold">2. 조건 및 오류 검증</span>
+                        <span class="text-slate-300">피해자 방어흔 유무를 변경해 보거나, 찌르기 1회에 비산 범위를 높여 오류 가드레일 작동을 확인해 보세요.</span>
+                    </div>
+                    <div class="bg-slate-900/80 p-3.5 rounded-lg border border-slate-700/70 flex flex-col gap-1 hover:border-emerald-500/50 transition">
+                        <span class="text-emerald-400 font-bold">3. 분석 리포트 활용</span>
+                        <span class="text-slate-300">추정된 성격 점수(1~5점)와 수사 가이드 리포트 및 논문 회귀 산점도 내 사건 위치를 확인하세요.</span>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 2컬럼 레이아웃 -->
+        <div class="grid grid-cols-1 lg:grid-cols-12 gap-8">
+            
+            <!-- 왼쪽: 데이터 입력 파트 -->
+            <div class="lg:col-span-5 bg-slate-800/80 rounded-xl p-6 border border-slate-700 space-y-6 shadow-lg">
+                <div class="flex justify-between items-center border-b border-slate-700 pb-3">
+                    <h3 class="font-bold text-lg text-white flex items-center gap-2">
+                        <span>1. 사건 현장 데이터 입력</span>
+                    </h3>
+                    <button type="button" onclick="loadExampleData()" class="text-xs bg-slate-700 hover:bg-slate-600 active:bg-slate-500 text-slate-200 px-3 py-1.5 rounded transition shadow">
+                        📋 논문 익명 사건 사례 불러오기
+                    </button>
+                </div>
+
+                <!-- 타격 횟수 입력 -->
+                <div>
+                    <div class="flex justify-between items-center mb-1">
+                        <label class="block text-sm font-medium text-slate-200">
+                            피해자 창상 수 (타격/찌르기 횟수)
+                        </label>
+                        <input type="number" id="stabCountNum" min="1" max="35" value="6" 
+                               class="w-16 bg-slate-900 border border-slate-700 rounded text-right px-2 py-0.5 text-sm text-red-400 font-bold outline-none focus:border-red-500"
+                               onchange="handleDirectNumInput(this)">
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <input type="range" id="stabCount" min="1" max="35" value="6" class="w-full accent-red-500 cursor-pointer" oninput="updateFormValues()">
+                        <span id="stabCountVal" class="text-lg font-bold text-red-400 w-12 text-right">6회</span>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-1">1~3회: 정밀 타격 / 4~9회: 감정 분출 타격 / 10회 이상: 과도 타격(Overkill)</p>
+                </div>
+
+                <!-- 비산 혈흔 분포 면 수 -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-200 mb-1">
+                        충격 비산 혈흔(Impact Spatter) 발견 면 수
+                    </label>
+                    <select id="bloodstainRange" class="w-full bg-slate-900 border border-slate-700 rounded-lg p-2.5 text-slate-200 text-sm focus:ring-2 focus:ring-red-500 outline-none" onchange="calculateProfiling()">
+                        <option value="0">0점: 단일 면 (피해자 주변 바닥에만 제한적)</option>
+                        <option value="1" selected>1점: 2개 면 (바닥 + 벽면 1곳)</option>
+                        <option value="2">2점: 3개 면 (바닥 + 벽면 2곳 이상)</option>
+                        <option value="3">3점: 4개 면 이상 (바닥 + 벽면 + 천장 포함 광범위 비산)</option>
+                    </select>
+                </div>
+
+                <!-- 피해자 물리적 저항 유무 -->
+                <div>
+                    <label class="block text-sm font-medium text-slate-200 mb-2">
+                        피해자의 물리적 저항 여부
+                    </label>
+                    <div class="grid grid-cols-2 gap-3">
+                        <label class="flex items-center gap-2 p-3 bg-slate-900 border border-slate-700 rounded-lg cursor-pointer hover:border-slate-500">
+                            <input type="radio" name="victimResistance" value="1" checked class="accent-red-500" onchange="calculateProfiling()">
+                            <span class="text-sm text-slate-200">저항 있음 (방어흔)</span>
+                        </label>
+                        <label class="flex items-center gap-2 p-3 bg-slate-900 border border-slate-700 rounded-lg cursor-pointer hover:border-slate-500">
+                            <input type="radio" name="victimResistance" value="0" class="accent-red-500" onchange="calculateProfiling()">
+                            <span class="text-sm text-slate-200">저항 없음/기습</span>
+                        </label>
+                    </div>
+                    <p class="text-xs text-slate-400 mt-1">* 저항 부재 시 비산 범위가 축소될 수 있음</p>
+                </div>
+
+                <!-- 프로파일링 버튼 (반응성 강화 처리) -->
+                <div class="pt-2">
+                    <button type="button" id="btnRunProfiling" onclick="onProfilingButtonClick()" 
+                            class="w-full bg-red-600 hover:bg-red-700 active:scale-95 text-white font-bold py-3.5 rounded-lg shadow-lg transition-all duration-150 flex justify-center items-center gap-2 cursor-pointer border border-red-500">
+                        <span id="btnIcon">🔍</span>
+                        <span id="btnText">프로파일링 분석 실행</span>
+                    </button>
+                </div>
+            </div>
+
+            <!-- 오른쪽: 분석 결과 & 시뮬레이션 -->
+            <div class="lg:col-span-7 space-y-6">
+                
+                <!-- 분석 결과 요약 카드 -->
+                <div id="resultCard" class="bg-slate-800/80 rounded-xl p-6 border border-slate-700 shadow-lg transition-all">
+                    <h3 class="font-bold text-lg text-white mb-4 flex items-center justify-between">
+                        <span>2. 추정 프로파일링 결과</span>
+                        <span id="scoreBadge" class="text-xs px-3 py-1 rounded-full bg-red-500/20 text-red-400 border border-red-500/30 font-semibold">분석 완료</span>
+                    </h3>
+
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
+                        <div class="bg-slate-900 p-4 rounded-lg border border-slate-700/80 text-center">
+                            <div class="text-xs text-slate-400 mb-1">추정 외향성 / 충동성 점수</div>
+                            <div id="predictedScore" class="text-3xl font-extrabold text-red-400">2.2 <span class="text-sm font-normal text-slate-400">/ 5.0 점</span></div>
+                            <div id="personalityType" class="text-xs font-semibold text-amber-300 mt-1">중간형 성격 · 감정 분출형</div>
+                        </div>
+
+                        <div class="bg-slate-900 p-4 rounded-lg border border-slate-700/80 text-center">
+                            <div class="text-xs text-slate-400 mb-1">가해 행위 격렬도 (Overkill)</div>
+                            <div id="overkillLevel" class="text-3xl font-extrabold text-amber-400">보통 (치사/감정 타격)</div>
+                            <div id="overkillDesc" class="text-xs text-slate-300 mt-1">순간적 충동성 및 치사 목적 가해</div>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-900/70 p-4 rounded-lg border border-slate-700 text-sm space-y-2">
+                        <div class="font-semibold text-red-400 flex items-center gap-1">
+                            <span>📌 수사관 지원 프로파일링 가이드:</span>
+                        </div>
+                        <p id="reportText" class="text-slate-300 leading-relaxed text-xs">
+                            본 사건 현장에서 관찰된 타격 수치는 단순 제압을 넘어선 순간적 감정 분출이 개입되었음을 보여줍니다. 내향적 성향의 감정 억제와 충동성이 결합된 형태입니다.
+                        </p>
+                    </div>
+                </div>
+
+                <!-- CLICKABLE: 찌르기 클릭 시뮬레이터 -->
+                <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700 space-y-3 shadow-lg">
+                    <div class="flex justify-between items-center flex-wrap gap-2">
+                        <h3 class="font-bold text-sm text-slate-200 flex items-center gap-2">
+                            <span>🖱 클릭 방식 찌르기 충격 비산(Impact Spatter) 시뮬레이터</span>
+                        </h3>
+                        <div class="flex gap-2">
+                            <button type="button" onclick="autoStab(5)" class="text-xs bg-amber-600 hover:bg-amber-700 active:scale-95 text-white px-2.5 py-1 rounded transition">
+                                ⚡ 5회 연속 타격
+                            </button>
+                            <button type="button" onclick="resetAnim()" class="text-xs bg-slate-700 hover:bg-slate-600 active:scale-95 text-slate-200 px-2.5 py-1 rounded transition">
+                                🔄 혈흔 초기화
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="relative bg-slate-950 rounded-lg overflow-hidden border border-slate-800 flex justify-center items-center">
+                        <canvas id="bloodCanvas" width="550" height="260" class="w-full max-w-full h-auto"></canvas>
+                        <div class="absolute top-3 left-3 bg-black/70 backdrop-blur px-2.5 py-1 rounded text-[11px] text-slate-300 border border-slate-700">
+                            👈 화면(인체 타격 부위)을 직접 클릭하세요!
+                        </div>
+                    </div>
+
+                    <div class="flex justify-between items-center text-xs text-slate-400 pt-1">
+                        <div>클릭한 찌르기 횟수: <span id="animStabCount" class="text-red-400 font-bold">6</span>회</div>
+                        <div>벽/천장 부착 비산 입자: <span id="animParticleCount" class="text-red-400 font-bold">0</span>개</div>
+                        <div id="animModeText" class="text-amber-400 font-semibold">보통 (감정 분출형 타격)</div>
+                    </div>
+                </div>
+
+                <!-- 차트 시각화 -->
+                <div class="bg-slate-800/80 rounded-xl p-6 border border-slate-700 shadow-lg">
+                    <h3 class="font-bold text-sm text-slate-200 mb-2">
+                        📊 논문 회귀 모델(N=30, 익명 표본) 데이터 내 현 사건의 위치
+                    </h3>
+                    <div class="h-48 relative">
+                        <canvas id="correlationChart"></canvas>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+    </main>
+
+    <footer class="max-w-7xl mx-auto px-4 py-6 border-t border-slate-800 text-center text-xs text-slate-500">
+        본 애플리케이션은 학술 연구 논문("범죄자의 성격 특성이 날붙이 살해 현장 타격 횟수 및 비산 혈흔 범위에 미치는 영향", 2026)의 통계적 상관관계를 구현한 데모 프로젝트입니다.
+    </footer>
+
+    <!-- 로직 및 시뮬레이션 JS -->
+    <script>
+        let myChart = null;
+
+        let canvas, ctx;
+        let particles = [];
+        let bloodStains = [];
+        let currentStabs = 6;
+        let lastStrike = null;
+
+        // 토스트 알림 기능
+        function showToast(msg) {
+            const toast = document.getElementById('toastNotification');
+            const toastMsg = document.getElementById('toastMsg');
+            toastMsg.innerText = msg;
+            toast.classList.remove('opacity-0', 'translate-y-[-10px]');
+            toast.classList.add('opacity-100', 'translate-y-0');
+
+            setTimeout(() => {
+                toast.classList.remove('opacity-100', 'translate-y-0');
+                toast.classList.add('opacity-0', 'translate-y-[-10px]');
+            }, 1800);
+        }
+
+        // 버튼 클릭 시 확실한 피드백 부여
+        function onProfilingButtonClick() {
+            const btnText = document.getElementById('btnText');
+            const btnIcon = document.getElementById('btnIcon');
+            const resultCard = document.getElementById('resultCard');
+
+            btnText.innerText = "연산 중...";
+            btnIcon.innerText = "⏳";
+
+            // 결과 카드 깜빡임 효과
+            resultCard.classList.add('animate-pulse-fast');
+
+            setTimeout(() => {
+                calculateProfiling();
+                btnText.innerText = "프로파일링 분석 실행";
+                btnIcon.innerText = "🔍";
+                resultCard.classList.remove('animate-pulse-fast');
+                showToast("최신 입력 데이터로 프로파일링을 재연산했습니다!");
+            }, 250);
+        }
+
+        function updateFormValues() {
+            let countInput = document.getElementById('stabCount');
+            let numInput = document.getElementById('stabCountNum');
+            
+            let count = parseInt(countInput.value);
+            if (isNaN(count) || count < 1) count = 1;
+            if (count > 35) count = 35;
+
+            countInput.value = count;
+            numInput.value = count;
+            document.getElementById('stabCountVal').innerText = count + '회';
+            currentStabs = count;
+            document.getElementById('animStabCount').innerText = currentStabs;
+            
+            calculateProfiling();
+        }
+
+        function handleDirectNumInput(inputElem) {
+            let val = parseInt(inputElem.value);
+            if (isNaN(val) || val < 1) val = 1;
+            if (val > 35) val = 35;
+            document.getElementById('stabCount').value = val;
+            updateFormValues();
+        }
+
+        function calculateProfiling() {
+            let stabCount = parseInt(document.getElementById('stabCount').value);
+            let bloodRange = parseInt(document.getElementById('bloodstainRange').value);
+            
+            if (isNaN(stabCount) || stabCount < 1) stabCount = 1;
+            if (isNaN(bloodRange) || bloodRange < 0) bloodRange = 0;
+
+            const resistanceElem = document.querySelector('input[name="victimResistance"]:checked');
+            const resistance = resistanceElem ? parseInt(resistanceElem.value) : 1;
+
+            const reportText = document.getElementById('reportText');
+            const predictedScore = document.getElementById('predictedScore');
+            const personalityType = document.getElementById('personalityType');
+            const overkillLevel = document.getElementById('overkillLevel');
+
+            if (stabCount <= 2 && bloodRange >= 2) {
+                predictedScore.innerHTML = `<span class="text-amber-400 text-xl">분석 불가</span>`;
+                personalityType.innerText = "⚠ 현장 데이터 상충 (물리적 예외 발생)";
+                personalityType.className = "text-xs font-semibold text-amber-400 mt-1";
+                overkillLevel.innerText = "데이터 재검토 필요";
+                overkillLevel.className = "text-xl font-bold text-amber-400";
+                
+                reportText.innerHTML = `
+                    <strong class="text-amber-300">[법의학적 데이터 오류 경고]</strong><br>
+                    타격/찌르기 횟수가 1~2회에 불과한 상황에서 3개 면 이상의 광범위한 충격 비산 혈흔이 관찰되는 것은 날붙이 과도타격 원리와 상충합니다.<br>
+                    • <strong>추가 확인:</strong> 해당 혈흔이 Impact Spatter가 아닌 <em>'주요 동맥 파열 분출(Arterial Spurt)'</em>인지 재검토하십시오.
+                `;
+                
+                updateChart(0, stabCount);
+                document.getElementById('animModeText').innerText = "⚠ 불가능한 상태 시뮬레이션";
+                document.getElementById('animModeText').className = "text-amber-400 font-semibold";
+                return;
+            }
+
+            let baseScore = 1.0 + (stabCount * 0.12) + (bloodRange * 0.45);
+            if (resistance === 0 && bloodRange < 2) baseScore += 0.3;
+
+            let score = Math.min(5.0, Math.max(1.0, baseScore)).toFixed(1);
+            predictedScore.innerHTML = `${score} <span class="text-sm font-normal text-slate-400">/ 5.0 점</span>`;
+
+            if (score >= 4.0 || stabCount >= 10) {
+                personalityType.innerText = "극도의 외향성 · 자극추구형 / 충동적 과도타격";
+                personalityType.className = "text-xs font-semibold text-red-400 mt-1";
+                overkillLevel.innerText = "매우 높음 (Overkill)";
+                overkillLevel.className = "text-3xl font-extrabold text-red-500";
+                reportText.innerHTML = `가해자는 감정 조절력이 마비된 상태에서 10회 이상의 무차별 과도타격(Overkill)을 가했습니다. 타격 충격으로 사방에 미세 충격 비산 혈흔(Impact Spatter)이 대량 형성되었습니다.`;
+                document.getElementById('animModeText').innerText = "과도 타격 (광범위 충격 비산)";
+                document.getElementById('animModeText').className = "text-red-400 font-semibold";
+            } else if (score >= 2.2 || stabCount >= 4) {
+                personalityType.innerText = "중간형 성격 · 감정 분출형";
+                personalityType.className = "text-xs font-semibold text-amber-300 mt-1";
+                overkillLevel.innerText = "보통 (치사/감정 타격)";
+                overkillLevel.className = "text-3xl font-extrabold text-amber-400";
+                reportText.innerHTML = `${stabCount}회의 찌르기 타격은 단순 제압을 넘어선 순간적 감정 분출이 개입되었음을 의미합니다. 내향적 감정 억제와 순간적 충동성이 결합된 형태입니다.`;
+                document.getElementById('animModeText').innerText = "보통 (감정 분출형 타격)";
+                document.getElementById('animModeText').className = "text-amber-400 font-semibold";
+            } else {
+                personalityType.innerText = "내향성 · 정밀 타격형";
+                personalityType.className = "text-xs font-semibold text-blue-300 mt-1";
+                overkillLevel.innerText = "낮음 (최소 타격)";
+                overkillLevel.className = "text-3xl font-extrabold text-blue-400";
+                reportText.innerHTML = `최소한의 찌르기 타격(${stabCount}회)으로 범행을 마쳤으며, 감정이 통제된 정밀 공격성을 나타냅니다.`;
+                document.getElementById('animModeText').innerText = "단일/정밀 타격 (비산 최소화)";
+                document.getElementById('animModeText').className = "text-blue-400 font-semibold";
+            }
+
+            updateChart(score, stabCount);
+        }
+
+        function loadExampleData() {
+            document.getElementById('stabCount').value = 21;
+            document.getElementById('bloodstainRange').value = 3;
+            document.querySelector('input[name="victimResistance"][value="1"]').checked = true;
+            updateFormValues();
+            showToast("익명 사건 표본 데이터가 설정되었습니다.");
+        }
+
+        function initChart() {
+            const ctxChart = document.getElementById('correlationChart').getContext('2d');
+            const sampleData = [
+                {x: 1.2, y: 1}, {x: 1.5, y: 2}, {x: 2.1, y: 4}, {x: 2.3, y: 6},
+                {x: 3.0, y: 10}, {x: 3.4, y: 12}, {x: 4.1, y: 18}, {x: 4.5, y: 22},
+                {x: 4.8, y: 25}, {x: 5.0, y: 31}
+            ];
+
+            myChart = new Chart(ctxChart, {
+                type: 'scatter',
+                data: {
+                    datasets: [
+                        { label: '논문 연구 익명 표본 (N=30)', data: sampleData, backgroundColor: 'rgba(148, 163, 184, 0.5)' },
+                        { label: '현재 분석 사건', data: [{x: 2.2, y: 6}], backgroundColor: 'rgba(239, 68, 68, 1)', pointRadius: 8 }
+                    ]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { title: { display: true, text: '범죄자 외향성 점수 (1~5점)', color: '#94a3b8' }, min: 0, max: 6, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } },
+                        y: { title: { display: true, text: '타격 횟수 (회)', color: '#94a3b8' }, min: 0, max: 35, ticks: { color: '#94a3b8' }, grid: { color: '#334155' } }
+                    },
+                    plugins: { legend: { labels: { color: '#f8fafc' } } }
+                }
+            });
+        }
+
+        function updateChart(score, stabCount) {
+            if (myChart) {
+                myChart.data.datasets[1].data = [{x: parseFloat(score), y: stabCount}];
+                myChart.update();
+            }
+        }
+
+        function initAnimCanvas() {
+            canvas = document.getElementById('bloodCanvas');
+            ctx = canvas.getContext('2d');
+            canvas.addEventListener('click', handleCanvasClick);
+            resetAnim();
+            requestAnimationFrame(animLoop);
+        }
+
+        function handleCanvasClick(e) {
+            const rect = canvas.getBoundingClientRect();
+            const scaleX = canvas.width / rect.width;
+            const scaleY = canvas.height / rect.height;
+            const clickX = (e.clientX - rect.left) * scaleX;
+            const clickY = (e.clientY - rect.top) * scaleY;
+            performStabStrike(clickX, clickY);
+        }
+
+        function performStabStrike(x, y) {
+            lastStrike = { x: x, y: y, opacity: 1.0 };
+            bloodStains.push({ x: x, y: y, r: Math.random() * 3 + 4 });
+            spawnImpactSpatter(x, y);
+
+            const slider = document.getElementById('stabCount');
+            if (parseInt(slider.value) < 35) {
+                slider.value = parseInt(slider.value) + 1;
+            }
+            updateFormValues();
+        }
+
+        function autoStab(times) {
+            let count = 0;
+            const interval = setInterval(() => {
+                const targetX = canvas.width / 2 + (Math.random() * 80 - 40);
+                const targetY = canvas.height / 2 + (Math.random() * 80 - 40);
+                performStabStrike(targetX, targetY);
+                count++;
+                if (count >= times) clearInterval(interval);
+            }, 120);
+        }
+
+        function resetAnim() {
+            particles = [];
+            bloodStains = [];
+            lastStrike = null;
+            document.getElementById('stabCount').value = 1;
+            document.getElementById('animParticleCount').innerText = '0';
+            updateFormValues();
+        }
+
+        function animLoop() {
+            drawScene();
+            requestAnimationFrame(animLoop);
+        }
+
+        function drawScene() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            ctx.strokeStyle = '#334155';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(10, 10, canvas.width - 20, canvas.height - 20);
+
+            ctx.fillStyle = '#64748b';
+            ctx.font = '10px Pretendard';
+            ctx.fillText('천장 (Ceiling)', canvas.width / 2 - 30, 25);
+            ctx.fillText('바닥 (Floor)', canvas.width / 2 - 25, canvas.height - 15);
+            ctx.fillText('좌측 벽', 15, canvas.height / 2);
+            ctx.fillText('우측 벽', canvas.width - 50, canvas.height / 2);
+
+            const targetX = canvas.width / 2;
+            const targetY = canvas.height / 2;
+            ctx.fillStyle = 'rgba(71, 85, 105, 0.3)';
+            ctx.beginPath();
+            ctx.arc(targetX, targetY, 45, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = 'rgba(100, 116, 139, 0.5)';
+            ctx.setLineDash([4, 4]);
+            ctx.stroke();
+            ctx.setLineDash([]);
+
+            ctx.fillStyle = '#94a3b8';
+            ctx.font = '11px Pretendard';
+            ctx.fillText('피해자 타격 목표 영역', targetX - 48, targetY + 4);
+
+            for (let stain of bloodStains) {
+                ctx.fillStyle = 'rgba(185, 28, 28, 0.85)';
+                ctx.beginPath();
+                ctx.arc(stain.x, stain.y, stain.r, 0, Math.PI * 2);
+                ctx.fill();
+            }
+
+            if (lastStrike && lastStrike.opacity > 0) {
+                ctx.strokeStyle = `rgba(239, 68, 68, ${lastStrike.opacity})`;
+                ctx.lineWidth = 3;
+                ctx.beginPath();
+                ctx.arc(lastStrike.x, lastStrike.y, 12 * (1.5 - lastStrike.opacity), 0, Math.PI * 2);
+                ctx.stroke();
+
+                ctx.strokeStyle = `rgba(248, 250, 252, ${lastStrike.opacity})`;
+                ctx.lineWidth = 2;
+                ctx.beginPath();
+                ctx.moveTo(lastStrike.x - 15, lastStrike.y - 15);
+                ctx.lineTo(lastStrike.x, lastStrike.y);
+                ctx.stroke();
+
+                lastStrike.opacity -= 0.05;
+            }
+
+            for (let i = particles.length - 1; i >= 0; i--) {
+                let p = particles[i];
+                p.x += p.vx;
+                p.y += p.vy;
+                p.vy += 0.15;
+
+                ctx.fillStyle = '#dc2626';
+                ctx.beginPath();
+                ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+                ctx.fill();
+
+                if (p.x <= 10 || p.x >= canvas.width - 10 || p.y <= 10 || p.y >= canvas.height - 10) {
+                    bloodStains.push({
+                        x: Math.min(Math.max(p.x, 10), canvas.width - 10),
+                        y: Math.min(Math.max(p.y, 10), canvas.height - 10),
+                        r: p.r + Math.random() * 1.5
+                    });
+                    particles.splice(i, 1);
+                    document.getElementById('animParticleCount').innerText = bloodStains.length;
+                }
+            }
+        }
+
+        function spawnImpactSpatter(x, y) {
+            const particleCount = Math.floor(Math.random() * 14) + 12;
+            for (let i = 0; i < particleCount; i++) {
+                const angle = Math.random() * Math.PI * 2;
+                const speed = Math.random() * 8 + 3;
+                particles.push({
+                    x: x,
+                    y: y,
+                    vx: Math.cos(angle) * speed,
+                    vy: Math.sin(angle) * speed,
+                    r: Math.random() * 2 + 1
+                });
+            }
+        }
+
+        window.onload = function() {
+            initChart();
+            initAnimCanvas();
+            calculateProfiling();
+        };
+    </script>
+</body>
+</html>
